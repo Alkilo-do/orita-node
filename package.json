@@ -1,0 +1,57 @@
+{
+  "name": "orita-sdk",
+  "version": "1.0.0",
+  "description": "The scheduling infrastructure for AI agents — official Node.js / TypeScript SDK",
+  "keywords": [
+    "orita",
+    "scheduling",
+    "ai",
+    "agents",
+    "booking",
+    "appointments",
+    "sdk"
+  ],
+  "homepage": "https://orita.online",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Alkilo-do/orita-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Alkilo-do/orita-node/issues"
+  },
+  "license": "MIT",
+  "author": "Alkilo-do",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
