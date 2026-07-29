@@ -1,0 +1,324 @@
+{
+  "name": "Orita — Book Medical Appointment",
+  "nodes": [
+    {
+      "id": "node-webhook",
+      "name": "Webhook — Receive Booking Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "orita-book-appointment",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "notes": "Receives: { name, lastname, email, specialty, date (optional) }"
+    },
+    {
+      "id": "node-get-event-types",
+      "name": "Orita — Get Event Types",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "https://orita.online/api/v1/event-types",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.ORITA_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "notes": "Lists all event types. We pick the first one."
+    },
+    {
+      "id": "node-get-professionals",
+      "name": "Orita — Find Professionals by Specialty",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "https://orita.online/api/v1/professionals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.ORITA_API_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "specialty",
+              "value": "={{ $('Webhook — Receive Booking Request').item.json.body.specialty }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "notes": "Filters professionals by the specialty from the webhook payload."
+    },
+    {
+      "id": "node-get-slots",
+      "name": "Orita — Get Available Slots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "https://orita.online/api/v1/slots",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.ORITA_API_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "eventTypeId",
+              "value": "={{ $('Orita — Get Event Types').item.json.data[0].id }}"
+            },
+            {
+              "name": "date",
+              "value": "={{ $('Webhook — Receive Booking Request').item.json.body.date || new Date(Date.now() + 86400000).toISOString().split('T')[0] }}"
+            },
+            {
+              "name": "providerId",
+              "value": "={{ $('Orita — Find Professionals by Specialty').item.json.data[0]?.id }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "notes": "Gets slots for the first matching professional. Date defaults to tomorrow if not provided."
+    },
+    {
+      "id": "node-book-appointment",
+      "name": "Orita — Book Appointment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://orita.online/api/v1/bookings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.ORITA_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "mode": "json",
+          "jsonString": "={{ JSON.stringify({ eventTypeId: $('Orita — Get Event Types').item.json.data[0].id, providerId: $('Orita — Find Professionals by Specialty').item.json.data[0]?.id, date: $('Webhook — Receive Booking Request').item.json.body.date || new Date(Date.now() + 86400000).toISOString().split('T')[0], time: $('Orita — Get Available Slots').item.json.slots[0].value, clientName: $('Webhook — Receive Booking Request').item.json.body.name, clientLastname: $('Webhook — Receive Booking Request').item.json.body.lastname, clientEmail: $('Webhook — Receive Booking Request').item.json.body.email }) }}"
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "notes": "Books the first available slot for the patient."
+    },
+    {
+      "id": "node-respond",
+      "name": "Respond — Booking Confirmed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1500, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Appointment booked successfully', booking: { id: $('Orita — Book Appointment').item.json.data.id, status: $('Orita — Book Appointment').item.json.data.status, date: $('Orita — Book Appointment').item.json.data.date, time: $('Orita — Book Appointment').item.json.data.time, patient: $('Webhook — Receive Booking Request').item.json.body.name + ' ' + $('Webhook — Receive Booking Request').item.json.body.lastname, professional: $('Orita — Find Professionals by Specialty').item.json.data[0]?.name } }) }}",
+        "options": {
+          "responseCode": 201,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "node-error-handler",
+      "name": "Respond — Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1500, 500],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $input.item.json.message || 'Failed to book appointment. Please try again.', details: $input.item.json }) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Receive Booking Request": {
+      "main": [
+        [
+          {
+            "node": "Orita — Get Event Types",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orita — Get Event Types": {
+      "main": [
+        [
+          {
+            "node": "Orita — Find Professionals by Specialty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orita — Find Professionals by Specialty": {
+      "main": [
+        [
+          {
+            "node": "Orita — Get Available Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orita — Get Available Slots": {
+      "main": [
+        [
+          {
+            "node": "Orita — Book Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orita — Book Appointment": {
+      "main": [
+        [
+          {
+            "node": "Respond — Booking Confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "orita",
+      "name": "orita"
+    },
+    {
+      "id": "scheduling",
+      "name": "scheduling"
+    },
+    {
+      "id": "medical",
+      "name": "medical"
+    }
+  ],
+  "pinData": {},
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "orita-n8n-workflow-v1"
+  },
+  "__readme": {
+    "description": "Orita Medical Appointment Booking Workflow",
+    "version": "1.0.0",
+    "author": "Orita SDK",
+    "docs": "https://orita.online/docs",
+    "webhook_payload": {
+      "name": "Ana",
+      "lastname": "López",
+      "email": "ana.lopez@example.com",
+      "specialty": "psychology",
+      "date": "2026-08-04"
+    },
+    "setup_instructions": [
+      "1. Import this JSON into n8n (Workflows → Import from file).",
+      "2. Set the ORITA_API_KEY environment variable in your n8n instance.",
+      "   Alternatively, edit each HTTP Request node and hardcode your API key.",
+      "3. Activate the workflow — your webhook URL will appear in the Webhook node.",
+      "4. Test by sending a POST request to the webhook URL with the payload above.",
+      "5. Optional: Add error handling by connecting nodes to the 'Respond — Error' node."
+    ],
+    "environment_variables": {
+      "ORITA_API_KEY": "Your Orita API key (starts with orita_)"
+    },
+    "api_reference": "https://orita.online/api/v1"
+  }
+}
