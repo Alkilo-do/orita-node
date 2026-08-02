@@ -1,6 +1,6 @@
 {
   "name": "orita-sdk",
-  "version": "1.0.0",
+  "version": "1.4.1",
   "description": "The scheduling infrastructure for AI agents — official Node.js / TypeScript SDK",
   "keywords": [
     "orita",
